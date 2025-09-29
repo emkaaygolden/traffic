@@ -1,42 +1,48 @@
-name: Playwright Traffic (on-demand + scheduled)
+name: Tor Playwright Traffic (matrix)
 
 on:
-  workflow_dispatch: {}
-  schedule:
-    - cron: '0 * * * *'  # every hour (UTC) - edit or remove as needed
+  workflow_dispatch:
+  # schedule:
+  #   - cron: '0 * * * *'  # optional
 
 jobs:
-  run-playwright:
+  simulate:
     runs-on: ubuntu-latest
+    timeout-minutes: 1440   # attempt to allow up to 24 hours (subject to account limits)
     strategy:
       matrix:
-        job: [1,2,3,4]   # parallel runners (each gets its own public IP). adjust length to scale.
+        port: [9050, 9051, 9052, 9053]  # only 4 parallel jobs for free tier
+
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
+      - name: Set up system packages and Python
         run: |
+          sudo apt-get update -y
+          sudo apt-get install -y tor curl wget unzip build-essential
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install playwright fake-useragent
           python -m playwright install --with-deps chromium
 
-      - name: Run Playwright simulator
-        env:
-          CONCURRENCY: 2   # number of parallel browser instances per runner
+      - name: Debug info
         run: |
-          echo "Runner ${{ matrix.job }} starting"
+          echo "Runner matrix port = ${{ matrix.port }}"
+          echo "This runner public IP (for debug) will be:"
+          curl -s https://ifconfig.me || true
+
+      - name: Run simulator
+        env:
+          TOR_BASE_PORT: ${{ matrix.port }}
+          CONCURRENCY: 2
+        run: |
           python main.py
 
-      - name: Upload logs
-        if: always()
+      - name: Upload logs on failure
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-logs-${{ matrix.job }}
+          name: playwright-logs-${{ matrix.port }}
           path: |
             **/*.log
             main.py
